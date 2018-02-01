@@ -23,7 +23,6 @@
 #include "material.h"
 #include "movegen.h"
 #include "movepick.h"
-#include "numa.h"
 #include "pawns.h"
 #include "search.h"
 #include "settings.h"
@@ -44,10 +43,7 @@ void thread_init(void *arg)
   int idx = (intptr_t)arg;
 
   int node;
-  if (settings.numa_enabled)
-    node = bind_thread_to_numa_node(idx);
-  else
-    node = 0;
+  node = 0;
   if (node >= num_cmh_tables) {
     int old = num_cmh_tables;
     num_cmh_tables = node + 16;
@@ -57,38 +53,23 @@ void thread_init(void *arg)
       cmh_tables[old++] = NULL;
   }
   if (!cmh_tables[node]) {
-    if (settings.numa_enabled)
-      cmh_tables[node] = numa_alloc(sizeof(CounterMoveHistoryStat));
-    else
-      cmh_tables[node] = calloc(sizeof(CounterMoveHistoryStat), 1);
-    for (int j = 0; j < 16; j++)
-      for (int k = 0; k < 64; k++)
-        (*cmh_tables[node])[0][0][j][k] = CounterMovePruneThreshold - 1;
+     cmh_tables[node] = calloc(sizeof(CounterMoveHistoryStat), 1);
+	 for (int j = 0; j < 16; j++)
+		for (int k = 0; k < 64; k++)
+			(*cmh_tables[node])[0][0][j][k] = CounterMovePruneThreshold - 1;
   }
 
   Pos *pos;
 
-  if (settings.numa_enabled) {
-    pos = numa_alloc(sizeof(Pos));
-    pos->pawnTable = numa_alloc(PAWN_ENTRIES * sizeof(PawnEntry));
-    pos->materialTable = numa_alloc(8192 * sizeof(MaterialEntry));
-    pos->counterMoves = numa_alloc(sizeof(CounterMoveStat));
-    pos->history = numa_alloc(sizeof(ButterflyHistory));
-    pos->captureHistory = numa_alloc(sizeof(CapturePieceToHistory));
-    pos->rootMoves = numa_alloc(sizeof(RootMoves));
-    pos->stack = numa_alloc((MAX_PLY + 110) * sizeof(Stack));
-    pos->moveList = numa_alloc(10000 * sizeof(ExtMove));
-  } else {
-    pos = calloc(sizeof(Pos), 1);
-    pos->pawnTable = calloc(PAWN_ENTRIES * sizeof(PawnEntry), 1);
-    pos->materialTable = calloc(8192 * sizeof(MaterialEntry), 1);
-    pos->counterMoves = calloc(sizeof(CounterMoveStat), 1);
-    pos->history = calloc(sizeof(ButterflyHistory), 1);
-    pos->captureHistory = calloc(sizeof(CapturePieceToHistory), 1);
-    pos->rootMoves = calloc(sizeof(RootMoves), 1);
-    pos->stack = calloc((MAX_PLY + 110) * sizeof(Stack), 1);
-    pos->moveList = calloc(10000 * sizeof(ExtMove), 1);
-  }
+ pos = calloc(sizeof(Pos), 1);
+ pos->pawnTable = calloc(PAWN_ENTRIES * sizeof(PawnEntry), 1);
+ pos->materialTable = calloc(8192 * sizeof(MaterialEntry), 1);
+ pos->counterMoves = calloc(sizeof(CounterMoveStat), 1);
+ pos->history = calloc(sizeof(ButterflyHistory), 1);
+ pos->captureHistory = calloc(sizeof(CapturePieceToHistory), 1);
+ pos->rootMoves = calloc(sizeof(RootMoves), 1);
+ pos->stack = calloc((MAX_PLY + 110) * sizeof(Stack), 1);
+ pos->moveList = calloc(10000 * sizeof(ExtMove), 1);
   pos->thread_idx = idx;
   pos->counterMoveHistory = cmh_tables[node];
 
@@ -169,27 +150,16 @@ void thread_destroy(Pos *pos)
   CloseHandle(pos->stopEvent);
 #endif
 
-  if (settings.numa_enabled) {
-    numa_free(pos->pawnTable, PAWN_ENTRIES * sizeof(PawnEntry));
-    numa_free(pos->materialTable, 8192 * sizeof(MaterialEntry));
-    numa_free(pos->counterMoves, sizeof(CounterMoveStat));
-    numa_free(pos->history, sizeof(ButterflyHistory));
-    numa_free(pos->captureHistory, sizeof(CapturePieceToHistory));
-    numa_free(pos->rootMoves, sizeof(RootMoves));
-    numa_free(pos->stack, (MAX_PLY + 110) * sizeof(Stack));
-    numa_free(pos->moveList, 10000 * sizeof(ExtMove));
-    numa_free(pos, sizeof(Pos));
-  } else {
     free(pos->pawnTable);
     free(pos->materialTable);
     free(pos->counterMoves);
     free(pos->history);
-    free(pos->captureHistory);
+	free(pos->captureHistory);
     free(pos->rootMoves);
     free(pos->stack);
     free(pos->moveList);
     free(pos);
-  }
+
 }
 
 
@@ -334,10 +304,6 @@ void threads_exit(void)
   CloseHandle(io_mutex);
   CloseHandle(Threads.event);
 #endif
-
-#ifdef NUMA
-  numa_exit();
-#endif
 }
 
 
@@ -355,9 +321,6 @@ void threads_set_number(int num)
   if (num == 0 && num_cmh_tables > 0) {
     for (int i = 0; i < num_cmh_tables; i++)
       if (cmh_tables[i]) {
-        if (settings.numa_enabled)
-          numa_free(cmh_tables[i], sizeof(CounterMoveHistoryStat));
-        else
           free(cmh_tables[i]);
       }
     free(cmh_tables);

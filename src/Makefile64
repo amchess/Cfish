@@ -22,13 +22,10 @@
 ### ==========================================================================
 
 ### Establish the operating system name
-KERNEL = $(shell uname -s)
-ifeq ($(KERNEL),Linux)
-	OS = $(shell uname -o)
-endif
+UNAME = $(shell uname)
 
 ### Executable name
-EXE = cfish
+EXE = corcfishextended
 
 ### Installation dir definitions
 PREFIX = /usr/local
@@ -41,7 +38,7 @@ PGOBENCH = ./$(EXE) bench 16 1 15
 OBJS = benchmark.o bitbase.o bitboard.o endgame.o evaluate.o main.o \
 	material.o misc.o movegen.o movepick.o pawns.o position.o psqt.o \
 	search.o tbprobe.o thread.o timeman.o tt.o uci.o ucioption.o \
-         settings.o polybook.o
+         settings.o
 
 ### ==========================================================================
 ### Section 2. High-level Configuration
@@ -66,14 +63,15 @@ OBJS = benchmark.o bitbase.o bitboard.o endgame.o evaluate.o main.o \
 # at the end of the line for flag values.
 
 ### 2.1. General and architecture defaults
-optimize = yes
 debug = no
-sanitize = no
-bits = 32
+optimize = yes
+arch = x86_64
+bits = 64
 prefetch = no
 popcnt = no
 sse = no
 pext = no
+native = no
 
 ### 2.2 Architecture specific
 
@@ -153,17 +151,7 @@ ifeq ($(COMP),gcc)
 	comp=gcc
 	CC=gcc
 	CFLAGS += -pedantic -Wextra -Wshadow -m$(bits)
-	ifeq ($(ARCH),armv7)
-		ifeq ($(OS),Android)
-			CXXFLAGS += -m$(bits)
-			LDFLAGS += -m$(bits)
-		endif
-	else
-		CXXFLAGS += -m$(bits)
-		LDFLAGS += -m$(bits)
-	endif
-
-	ifneq ($(KERNEL),Darwin)
+	ifneq ($(UNAME),Darwin)
 	   LDFLAGS += -Wl,--no-as-needed
 	endif
 endif
@@ -171,7 +159,7 @@ endif
 ifeq ($(COMP),mingw)
 	comp=mingw
 
-	ifeq ($(KERNEL),Linux)
+	ifeq ($(UNAME),Linux)
 		ifeq ($(bits),64)
  			ifeq ($(shell which x86_64-w64-mingw32-cc-posix),)
 				CC=x86_64-w64-mingw32-gcc
@@ -533,5 +521,4 @@ icc-profile-clean:
 	-@$(CC) $(DEPENDFLAGS) -MM $(OBJS:.o=.c) > $@ 2> /dev/null
 
 -include .depend
-
 
