@@ -38,7 +38,7 @@ PGOBENCH = ./$(EXE) bench 16 1 15
 OBJS = benchmark.o bitbase.o bitboard.o endgame.o evaluate.o main.o \
 	material.o misc.o movegen.o movepick.o pawns.o position.o psqt.o \
 	search.o tbprobe.o thread.o timeman.o tt.o uci.o ucioption.o \
-        numa.o settings.o polybook.o
+         settings.o polybook.o
 
 ### ==========================================================================
 ### Section 2. High-level Configuration
@@ -55,8 +55,6 @@ OBJS = benchmark.o bitbase.o bitboard.o endgame.o evaluate.o main.o \
 # popcnt = yes/no     --- -DUSE_POPCNT     --- Use popcnt asm-instruction
 # sse = yes/no        --- -msse            --- Use Intel Streaming SIMD Extensions
 # pext = yes/no       --- -DUSE_PEXT       --- Use pext x86_64 asm-instruction
-# native = yes/no     --- -march=native    --- Optimize for local CPU
-# numa = yes/no       --- -DNUMA           --- Enable NUMA support
 #
 # Note that Makefile is space sensitive, so when adding new architectures
 # or modifying existing flags, you have to make sure there are no extra spaces
@@ -72,7 +70,6 @@ popcnt = yes
 sse = yes
 pext = no
 native = yes
-numa = yes
 
 ### 2.2 Architecture specific
 
@@ -317,21 +314,6 @@ ifeq ($(pext),yes)
 	ifeq ($(comp),$(filter $(comp),gcc clang mingw))
 		CFLAGS += -mbmi2
 	endif
-endif
-
-### native
-ifeq ($(native),yes)
-	CFLAGS += -march=native
-endif
-
-### numa
-ifeq ($(numa),yes)
-	CFLAGS += -DNUMA
-        ifeq ($(UNAME),Linux)
-        ifneq ($(comp),mingw)
-		LDFLAGS += -lnuma
-        endif
-        endif
 endif
 
 ### 3.8 Link Time Optimization, it works since gcc 4.5 but not on mingw under Windows.
