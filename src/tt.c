@@ -27,6 +27,7 @@
 #endif
 
 #include "bitboard.h"
+#include "numa.h"
 #include "settings.h"
 #include "tt.h"
 #include "types.h"
@@ -54,9 +55,14 @@ void tt_free(void)
 
 void tt_allocate(size_t mbSize)
 {
+#ifdef BIG_TT
   size_t count = ((size_t)1) << msb((mbSize * 1024 * 1024) / sizeof(Cluster));
+#else
+  size_t count = mbSize * 1024 * 1024 / sizeof(Cluster);
+#endif
 
   TT.mask = count - 1;
+  TT.clusterCount = count;
 
   size_t size = count * sizeof(Cluster);
 
@@ -115,6 +121,14 @@ void tt_allocate(size_t mbSize)
                          & ~(alignment - 1));
   if (!TT.mem)
     goto failed;
+
+#ifdef NUMA
+  // Interleave the shared transposition table across all nodes.
+  // Create an interleave mask of the nodes on which threads are
+  // actually running?
+  if (settings.numa_enabled)
+    numa_interleave_memory(TT.table, count * sizeof(Cluster), settings.mask);
+#endif
 
 #ifdef __linux__
 #ifdef MADV_HUGEPAGE

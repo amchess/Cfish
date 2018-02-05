@@ -1,3 +1,4 @@
+#include "numa.h"
 #include "search.h"
 #include "settings.h"
 #include "thread.h"
@@ -12,13 +13,17 @@ void process_delayed_settings(void)
 {
   int tt_change = delayed_settings.tt_size != settings.tt_size;
   int lp_change = delayed_settings.large_pages != settings.large_pages;
-  int numa_change =   (settings.numa_enabled != delayed_settings.numa_enabled);
+  int numa_change =   (settings.numa_enabled != delayed_settings.numa_enabled)
+                   || (   settings.numa_enabled
+                       && !masks_equal(settings.mask, delayed_settings.mask));
 
 #ifdef NUMA
   if (numa_change) {
     threads_set_number(0);
     settings.num_threads = 0;
 #ifndef __WIN32__
+    if ((settings.numa_enabled = delayed_settings.numa_enabled))
+      copy_bitmask_to_bitmask(delayed_settings.mask, settings.mask);
 #endif
     settings.numa_enabled = delayed_settings.numa_enabled;
   }
@@ -39,6 +44,6 @@ void process_delayed_settings(void)
   if (delayed_settings.clear) {
     delayed_settings.clear = 0;
     search_clear();
-  }  
+  }
 }
 

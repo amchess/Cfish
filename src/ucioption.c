@@ -29,6 +29,7 @@
 #endif
 
 #include "misc.h"
+#include "numa.h"
 #include "polybook.h"
 #include "search.h"
 #include "settings.h"
@@ -49,6 +50,15 @@ static void on_clear_hash(Option *opt)
 static void on_hash_size(Option *opt)
 {
   delayed_settings.tt_size = opt->value;
+}
+
+static void on_numa(Option *opt)
+{
+#ifdef NUMA
+  read_numa_nodes(opt->val_string);
+#else
+  (void)opt;
+#endif
 }
 
 static void on_threads(Option *opt)
@@ -115,6 +125,7 @@ static Option options_map[] = {
   { "BestBookMove", OPT_TYPE_CHECK, 1, 0, 0, NULL, on_best_book_move, 0, NULL },
   { "BookDepth", OPT_TYPE_SPIN, 255, 1, 255, NULL, on_book_depth, 0, NULL },
   { "LargePages", OPT_TYPE_CHECK, 1, 0, 0, NULL, on_large_pages, 0, NULL },
+  { "NUMA", OPT_TYPE_STRING, 0, 0, 0, "all", on_numa, 0, NULL },
   { NULL }
 };
 

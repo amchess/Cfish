@@ -22,10 +22,7 @@
 ### ==========================================================================
 
 ### Establish the operating system name
-KERNEL = $(shell uname -s)
-ifeq ($(KERNEL),Linux)
-	OS = $(shell uname -o)
-endif
+UNAME = $(shell uname)
 
 ### Executable name
 EXE = cfish
@@ -58,22 +55,21 @@ OBJS = benchmark.o bitbase.o bitboard.o endgame.o evaluate.o main.o \
 # popcnt = yes/no     --- -DUSE_POPCNT     --- Use popcnt asm-instruction
 # sse = yes/no        --- -msse            --- Use Intel Streaming SIMD Extensions
 # pext = yes/no       --- -DUSE_PEXT       --- Use pext x86_64 asm-instruction
-# native = yes/no     --- -march=native    --- Optimize for local CPU
-# numa = yes/no       --- -DNUMA           --- Enable NUMA support
 #
 # Note that Makefile is space sensitive, so when adding new architectures
 # or modifying existing flags, you have to make sure there are no extra spaces
 # at the end of the line for flag values.
 
 ### 2.1. General and architecture defaults
-optimize = yes
 debug = no
-sanitize = no
-bits = 32
-prefetch = no
-popcnt = no
-sse = no
+optimize = yes
+arch = x86_64
+bits = 64
+prefetch = yes
+popcnt = yes
+sse = yes
 pext = no
+native = yes
 
 ### 2.2 Architecture specific
 
@@ -153,17 +149,7 @@ ifeq ($(COMP),gcc)
 	comp=gcc
 	CC=gcc
 	CFLAGS += -pedantic -Wextra -Wshadow -m$(bits)
-	ifeq ($(ARCH),armv7)
-		ifeq ($(OS),Android)
-			CXXFLAGS += -m$(bits)
-			LDFLAGS += -m$(bits)
-		endif
-	else
-		CXXFLAGS += -m$(bits)
-		LDFLAGS += -m$(bits)
-	endif
-
-	ifneq ($(KERNEL),Darwin)
+	ifneq ($(UNAME),Darwin)
 	   LDFLAGS += -Wl,--no-as-needed
 	endif
 endif
@@ -171,13 +157,13 @@ endif
 ifeq ($(COMP),mingw)
 	comp=mingw
 
-	ifeq ($(KERNEL),Linux)
+	ifeq ($(UNAME),Linux)
 		ifeq ($(bits),64)
- 			ifeq ($(shell which x86_64-w64-mingw32-cc-posix),)
+#			ifeq ($(shell which x86_64-w64-mingw32-cc-posix),)
 				CC=x86_64-w64-mingw32-gcc
-			else
-				CC=x86_64-w64-mingw32-cc-posix
-			endif
+#			else
+#				CC=x86_64-w64-mingw32-cc-posix
+#			endif
 		else
 			ifeq ($(shell which i686-w64-mingw32-cc-posix),)
 				CC=i686-w64-mingw32-cc
@@ -190,7 +176,7 @@ ifeq ($(COMP),mingw)
 	endif
 
 	CFLAGS += -Wextra -Wshadow
-	LDFLAGS += -static
+	LDFLAGS += #-static
 endif
 
 ifeq ($(COMP),icc)
@@ -330,18 +316,13 @@ ifeq ($(pext),yes)
 	endif
 endif
 
-### native
-ifeq ($(native),yes)
-	CFLAGS += -march=native
-endif
-
 ### 3.8 Link Time Optimization, it works since gcc 4.5 but not on mingw under Windows.
 ### This is a mix of compile and link time options because the lto link phase
 ### needs access to the optimization flags.
 ifeq ($(comp),gcc)
 	ifeq ($(optimize),yes)
 	ifeq ($(debug),no)
-		CFLAGS +=  -flto
+		CFLAGS += # -flto
 		LDFLAGS += $(CFLAGS)
 	endif
 	endif
@@ -351,7 +332,7 @@ ifeq ($(comp),mingw)
 	ifeq ($(UNAME),Linux)
 	ifeq ($(optimize),yes)
 	ifeq ($(debug),no)
-		CFLAGS +=  -flto
+		CFLAGS += # -flto
 		LDFLAGS += $(CFLAGS)
 	endif
 	endif
@@ -533,5 +514,4 @@ icc-profile-clean:
 	-@$(CC) $(DEPENDFLAGS) -MM $(OBJS:.o=.c) > $@ 2> /dev/null
 
 -include .depend
-
 
