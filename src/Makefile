@@ -57,6 +57,8 @@ OBJS = benchmark.o bitbase.o bitboard.o endgame.o evaluate.o main.o \
 # pext = yes/no       --- -DUSE_PEXT       --- Use pext x86_64 asm-instruction
 # native = yes/no     --- -march=native    --- Optimize for local CPU
 # numa = yes/no       --- -DNUMA           --- Enable NUMA support
+# AVX = yes/no        --- -DUSE_AVX        --- Use AVX asm-instruction
+# AVX2 = yes/no       --- -DUSE_AVX2       --- Use AVX2 asm-instruction
 #
 # Note that Makefile is space sensitive, so when adding new architectures
 # or modifying existing flags, you have to make sure there are no extra spaces
@@ -65,15 +67,16 @@ OBJS = benchmark.o bitbase.o bitboard.o endgame.o evaluate.o main.o \
 ### 2.1. General and architecture defaults
 debug = no
 optimize = yes
-arch = x86_64
-bits = 64
-prefetch = yes
-popcnt = yes
-sse = yes
+arch = x86_32
+bits = 32
+prefetch = no
+popcnt = no
+sse = no
 pext = no
-native = yes
+native = no
 numa = yes
-lto = no
+AVX = no
+AVX2 = no
 
 ### 2.2 Architecture specific
 
@@ -101,7 +104,6 @@ ifeq ($(ARCH),x86-64)
 	bits = 64
 	prefetch = yes
 	sse = yes
-	popcnt = no
 endif
 
 ifeq ($(ARCH),x86-64-modern)
@@ -119,6 +121,24 @@ ifeq ($(ARCH),x86-64-bmi2)
 	popcnt = yes
 	sse = yes
 	pext = yes
+endif
+
+ifeq ($(ARCH),x86-64-avx)
+	arch = x86_64
+	bits = 64
+	prefetch = yes
+	popcnt = yes
+	sse = yes
+	AVX = yes
+endif
+
+ifeq ($(ARCH),x86-64-avx2)
+	arch = x86_64
+	bits = 64
+	prefetch = yes
+	popcnt = yes
+	sse = yes
+	AVX2 = yes
 endif
 
 ifeq ($(ARCH),armv7)
@@ -142,7 +162,7 @@ endif
 
 ### 3.1 Selecting compiler (default = gcc)
 
-CFLAGS += -Wall -std=c11 $(EXTRACFLAGS)
+CFLAGS += -flto -Wall -std=c11 $(EXTRACFLAGS)
 DEPENDFLAGS += -std=c11
 LDFLAGS += $(EXTRALDFLAGS) -lm
 
@@ -164,11 +184,11 @@ ifeq ($(COMP),mingw)
 
 	ifeq ($(UNAME),Linux)
 		ifeq ($(bits),64)
-#			ifeq ($(shell which x86_64-w64-mingw32-cc-posix),)
+ 			ifeq ($(shell which x86_64-w64-mingw32-cc-posix),)
 				CC=x86_64-w64-mingw32-gcc
-#			else
-#				CC=x86_64-w64-mingw32-cc-posix
-#			endif
+			else
+				CC=x86_64-w64-mingw32-cc-posix
+			endif
 		else
 			ifeq ($(shell which i686-w64-mingw32-cc-posix),)
 				CC=i686-w64-mingw32-cc
@@ -181,7 +201,7 @@ ifeq ($(COMP),mingw)
 	endif
 
 	CFLAGS += -Wextra -Wshadow
-	LDFLAGS += #-static
+	LDFLAGS += -static
 endif
 
 ifeq ($(COMP),icc)
@@ -202,16 +222,15 @@ ifeq ($(COMP),clang)
 endif
 
 ifeq ($(comp),icc)
+	profile_prepare = icc-profile-prepare
 	profile_make = icc-profile-make
 	profile_use = icc-profile-use
+	profile_clean = icc-profile-clean
 else
-ifeq ($(comp),clang)
-	profile_make = clang-profile-make
-	profile_use = clang-profile-use
-else
+	profile_prepare = gcc-profile-prepare
 	profile_make = gcc-profile-make
 	profile_use = gcc-profile-use
-endif
+	profile_clean = gcc-profile-clean
 endif
 
 ifeq ($(UNAME),Darwin)
@@ -276,8 +295,10 @@ ifeq ($(optimize),yes)
 
 	ifeq ($(comp),clang)
 		ifeq ($(UNAME),Darwin)
-			CFLAGS += -flto
-			LDFLAGS += $(CFLAGS)
+			ifeq ($(pext),no)
+				CFLAGS += -flto
+				LDFLAGS += $(CFLAGS)
+			endif
 			ifeq ($(arch),i386)
 				CFLAGS += -mdynamic-no-pic
 			endif
@@ -320,6 +341,16 @@ ifeq ($(pext),yes)
 	endif
 endif
 
+### 3.8 AVX
+ifeq ($(AVX),yes)
+		CFLAGS += -mavx -DUSE_AVX
+endif
+
+### 3.9 AVX2
+ifeq ($(AVX2),yes)
+		CFLAGS += -mavx2 -DUSE_AVX2
+endif
+
 ### native
 ifeq ($(native),yes)
 	CFLAGS += -march=native
@@ -335,27 +366,14 @@ ifeq ($(numa),yes)
         endif
 endif
 
-### 3.8 Link Time Optimization, it works since gcc 4.5 but not on mingw under Windows.
+### 3.10 Link Time Optimization, it works since gcc 4.5 but not on mingw under Windows.
 ### This is a mix of compile and link time options because the lto link phase
 ### needs access to the optimization flags.
 ifeq ($(comp),gcc)
 	ifeq ($(optimize),yes)
-	ifeq ($(lto),yes)
 	ifeq ($(debug),no)
-		CFLAGS += -flto
+		CFLAGS +=  -flto
 		LDFLAGS += $(CFLAGS)
-	endif
-	endif
-	endif
-endif
-
-ifeq ($(comp),clang)
-	ifeq ($(optimize),yes)
-	ifeq ($(lto),yes)
-	ifeq ($(debug),no)
-		CFLAGS += -flto
-		LDFLAGS += $(CFLAGS)
-	endif
 	endif
 	endif
 endif
@@ -363,17 +381,15 @@ endif
 ifeq ($(comp),mingw)
 	ifeq ($(UNAME),Linux)
 	ifeq ($(optimize),yes)
-	ifeq ($(lto),yes)
 	ifeq ($(debug),no)
-		CFLAGS += -flto
+		CFLAGS +=  -flto
 		LDFLAGS += $(CFLAGS)
-	endif
 	endif
 	endif
 	endif
 endif
 
-### 3.9 Android 5 can only run position independent executables. Note that this
+### 3.11 Android 5 can only run position independent executables. Note that this
 ### breaks Android 4.0 and earlier.
 ifeq ($(arch),armv7)
 	CFLAGS += -fPIE
@@ -430,27 +446,31 @@ help:
 	@echo "make profile-build ARCH=x86-64-modern COMP=gcc COMPCC=gcc-4.8"
 	@echo ""
 
-.PHONY: help build profile-build strip install clean objclean profileclean \
-        config-sanity icc-profile-use icc-profile-make gcc-profile-use \
-        gcc-profile-make clang-profile-use clang-profile-make
 
-build: config-sanity
+.PHONY: build profile-build
+build:
+	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) config-sanity
 	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) all
 
-profile-build: config-sanity objclean profileclean
+profile-build:
+	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) config-sanity
 	@echo ""
-	@echo "Step 1/4. Building instrumented executable ..."
+	@echo "Step 0/4. Preparing for profile build."
+	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) $(profile_prepare)
+	@echo ""
+	@echo "Step 1/4. Building executable for benchmark ..."
+	@rm -f *.o
 	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) $(profile_make)
 	@echo ""
 	@echo "Step 2/4. Running benchmark for pgo-build ..."
 	$(PGOBENCH) > /dev/null
 	@echo ""
-	@echo "Step 3/4. Building optimized executable ..."
-	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) objclean
+	@echo "Step 3/4. Building final executable ..."
+	@rm -f *.o
 	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) $(profile_use)
 	@echo ""
 	@echo "Step 4/4. NOT deleting profile data ..."
-#	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) profileclean
+#	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) $(profile_clean)
 
 strip:
 	strip $(EXE)
@@ -460,16 +480,8 @@ install:
 	-cp $(EXE) $(BINDIR)
 	-strip $(BINDIR)/$(EXE)
 
-clean: objclean profileclean
-	@rm -f .depend core
-
-objclean:
-	@rm -f $(EXE) $(EXE).exe *.o
-
-profileclean:
-	@rm -rf profdir
-	@rm -f bench.txt *.gcda *.gcno
-	@rm -f cfish.profdata *.profraw
+clean:
+	$(RM) $(EXE) $(EXE).exe *.o .depend *~ core bench.txt *.gcda
 
 default:
 	help
@@ -508,24 +520,13 @@ config-sanity:
 	@test "$(popcnt)" = "yes" || test "$(popcnt)" = "no"
 	@test "$(sse)" = "yes" || test "$(sse)" = "no"
 	@test "$(pext)" = "yes" || test "$(pext)" = "no"
-	@test "$(lto)" = "yes" || test "$(lto)" = "no"
 	@test "$(comp)" = "gcc" || test "$(comp)" = "icc" || test "$(comp)" = "mingw" || test "$(comp)" = "clang"
 
 $(EXE): $(OBJS)
 	$(CC) -o $@ $(OBJS) $(LDFLAGS)
 
-clang-profile-make:
-	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) \
-	EXTRACFLAGS='-fprofile-instr-generate ' \
-	EXTRALDFLAGS=' -fprofile-instr-generate' \
-	all
-
-clang-profile-use:
-	llvm-profdata merge -output=cfish.profdata *.profraw
-	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) \
-	EXTRACFLAGS='-fprofile-instr-use=cfish.profdata' \
-	EXTRALDFLAGS='-fprofile-use ' \
-	all
+gcc-profile-prepare:
+	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) gcc-profile-clean
 
 gcc-profile-make:
 	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) \
@@ -539,6 +540,13 @@ gcc-profile-use:
 	EXTRALDFLAGS='-lgcov' \
 	all
 
+gcc-profile-clean:
+	@rm -rf *.gcda *.gcno bench.txt
+
+icc-profile-prepare:
+	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) icc-profile-clean
+	@mkdir profdir
+
 icc-profile-make:
 	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) \
 	EXTRACFLAGS='-prof-gen=srcpos -prof_dir ./profdir' \
@@ -548,6 +556,9 @@ icc-profile-use:
 	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) \
 	EXTRACFLAGS='-prof_use -prof_dir ./profdir' \
 	all
+
+icc-profile-clean:
+	@rm -rf profdir bench.txt
 
 .depend:
 	-@$(CC) $(DEPENDFLAGS) -MM $(OBJS:.o=.c) > $@ 2> /dev/null
